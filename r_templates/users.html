@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Full Accounts Dump</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .critical { background-color: #ffcccc; }
+    </style>
+</head>
+<body>
+    <h1>AD-Dumper</h1>
+    <p>Generated on: {{ generated_on }}</p>
+
+    <h2>Users dump</h2>
+
+   
+    {% for item in users_list %}
+    
+    <table>
+        <th>User</th>
+        <th>name</th>
+        
+        <tr>
+            <td>{{ item.user }}</td>
+            <td>{{ item.name }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endfor %}
+  
+    
+
+</body>
+</html>

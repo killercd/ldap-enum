@@ -2,49 +2,46 @@
 import subprocess
 import argparse
 import sys
+from jinja2 import Environment, FileSystemLoader
+from datetime import datetime
+from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES
 
-def print_c(text, color):
-    colors = {
-        "red": "\033[91m",
-        "green": "\033[92m",
-        "reset": "\033[0m"
-    }
-
-    if color not in colors:
-        color = "reset"
-    print(f"{colors[color]}{text}{colors['reset']}")
+env = Environment(loader=FileSystemLoader('r_templates'))
+template = env.get_template('full_accounts.html')
 
 
-def ldap_query(ip, 
-                ad_username, 
-                pwd, 
-                base_domain,
-                query, 
-                params):
+def safe_decode(val):
+    if isinstance(val, bytes):
+        try:
+            return val.decode('utf-8')
+        except UnicodeDecodeError:
+            return val.decode('latin-1', errors='replace')
+    else:
+        return str(val)
 
-    return  subprocess.run(["ldapsearch", 
-                             "-H", 
-                             f"ldap://{ip}", 
-                             "-D"
-                             f"{ad_username}",
-                             "-w",
-                             f"{pwd}",
-                             "-b",
-                             f"{base_domain}",
-                            f"{query}",
-                            f"{params}"], 
-                            capture_output=True, text=True)
 
-def filter_rows(rows, filter):
-   rows = rows.split("\n")
-   for el in rows:
-       if el.find(filter)>=0: yield el
+def ldap_search(conn, base_domain, query, attributes=None):
 
-def separator(row):
-    return ", " if not row else "\n"
+    result_list = []
+    for entry in conn.extend.standard.paged_search(
+                                                    search_base=base_domain,
+                                                    search_filter=query,
+                                                    search_scope=SUBTREE,
+                                                    attributes=[ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES] if not attributes else attributes,
+                                                    paged_size=1000,
+                                                    generator=True):
+        if entry.get('type') == 'searchResEntry':
+            dn = entry.get('dn')
+            attrs = entry.get('attributes', {})
+            new_entry = {"name": dn, "attrs": []}
+            
+            for k, v in attrs.items():
+                new_entry["attrs"].append({"id": k, "val": ", ".join(safe_decode(x) for x in v)})
+            result_list.append(new_entry)            
+    return result_list
 
 def main():
-    parser = argparse.ArgumentParser(description="LDAP enumeration tool")
+    parser = argparse.ArgumentParser(description="LDAP dumper tool tool")
     parser.add_argument("--ip", "-i",required=True, type=str, help="Remote IP")
     parser.add_argument("--user", "-u",required=False, type=str, help="Username")
     parser.add_argument("--pwd", "-p", required=False, type=str, help="Password")
@@ -56,88 +53,25 @@ def main():
     args = parser.parse_args()
     print("[*] Querying users...")
 
-    ad_username=f"{args.user}@{args.domain}"
+    
+
     base_domain=args.domain.replace(".",",DC=")
     base_domain="DC="+base_domain
     
-    result = ldap_query(args.ip, 
-                        ad_username, 
-                        args.pwd, 
-                        base_domain,
-                        "(&(objectCategory=person)(objectClass=user))",
-                        "sAMAccountName")
-    
-    if result.stderr:
-        print_c(result.stderr,"red")
-        sys.exit(1)
 
-    filtered_users = filter_rows(result.stdout, "sAMAccountName:")
-    users  = list(map(lambda x: x.replace("sAMAccountName: ",""), filtered_users))
+    server = Server(f"ldap://{args.ip}", get_info=ALL)
+    conn = Connection(server, user=args.user, password=args.pwd, auto_bind=True)
+   
+    users_full = ldap_search(conn, base_domain, '(sAMAccountName=*)')
 
+    rendered_html = template.render(generated_on=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    users_full = users_full
+                                    )
 
-    print_c(separator(args.row_format).join(users),"green")
-    print("")
-    print("[*] Querying groups...")
-    
-    result = ldap_query(args.ip, 
-                        ad_username, 
-                        args.pwd, 
-                        base_domain,
-                        "(objectClass=group)",
-                        "cn")    
-    if result.stderr:
-        print_c(result.stderr,"red")
-        sys.exit(1)
-
-    filtered_groups = filter_rows(result.stdout, "cn:")
-    groups  = list(map(lambda x: x.replace("cn: ",""), filtered_groups))
-    print_c(separator(args.row_format).join(groups),"green")
-    print("")
-
-    print("[*] Querying members of groups...")
-    for group in groups:
-        result = ldap_query(args.ip, 
-                            ad_username, 
-                            args.pwd, 
-                            base_domain,
-                            f"(cn={group})",
-                            "member")
-        
-        if result.stderr:
-            print_c(result.stderr,"red")
-            sys.exit(1)
-
-        filtered_user_in_group = filter_rows(result.stdout, "member:")
-        print("")
-        print(f"Group {group}:")
-        for fuser in filtered_user_in_group:
-            fuser = fuser.split("member: ")[1
-                                            ]
-            result_usr = ldap_query(args.ip, 
-                            ad_username, 
-                            args.pwd, 
-                            fuser,
-                            "(objectClass=*)",
-                            "sAMAccountName")
-            
-            if result_usr.stderr:
-                print_c(result_usr.stderr,"red")
-                sys.exit(1)
-
-            
-            filtered_real_usr = filter_rows(result_usr.stdout, "sAMAccountName:")
-            user_extr  = list(map(lambda x: x.replace("sAMAccountName: ",""), filtered_real_usr))
-            if user_extr:
-                print_c(user_extr[0],"green")
-            
+    with open('full_accounts.html', 'w', encoding='utf-8') as f:
+        f.write(rendered_html)
 
 
-
-        # print_c(separator(args.row_format).join(users_extr),"green")
-        # print("")
-
-
-
-
+    conn.unbind()
 if __name__ == "__main__":
     main()
