@@ -1,1 +1,2 @@
-# ldap-enum
+# Simple AD users dumper 
+

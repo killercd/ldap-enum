@@ -4,9 +4,13 @@ import argparse
 import sys
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
-from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES
+from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
+from pathlib import Path
+import ssl
 
-env = Environment(loader=FileSystemLoader('r_templates'))
+
+script_dir = Path(__file__).resolve().parent
+env = Environment(loader=FileSystemLoader(script_dir / 'r_templates'))
 template = env.get_template('full_accounts.html')
 
 
@@ -46,22 +50,22 @@ def main():
     parser.add_argument("--user", "-u",required=False, type=str, help="Username")
     parser.add_argument("--pwd", "-p", required=False, type=str, help="Password")
     parser.add_argument("--domain", "-d", required=True, type=str, help="DC Domain ex: puppy.htb")
-    parser.add_argument("--row-format", action="store_true", help="Display in rows")
+    parser.add_argument("--use-ssl", required=False, action="store_true", help="Use LDAPS (SSL) on the connection")
     
 
 
     args = parser.parse_args()
-    print("[*] Querying users...")
-
-    
+    print("[*] Getting users info...")
 
     base_domain=args.domain.replace(".",",DC=")
     base_domain="DC="+base_domain
-    
+    tls_config = Tls(validate=ssl.CERT_REQUIRED, version=ssl.PROTOCOL_TLS_CLIENT)
+    if not args.use_ssl:
+        server = Server(f"ldap://{args.ip}", get_info=ALL)
+    else:
+        server = Server(f"ldaps://{args.ip}", port=636, use_ssl=True, get_info=ALL, tls=tls_config)
 
-    server = Server(f"ldap://{args.ip}", get_info=ALL)
     conn = Connection(server, user=args.user, password=args.pwd, auto_bind=True)
-   
     users_full = ldap_search(conn, base_domain, '(sAMAccountName=*)')
 
     rendered_html = template.render(generated_on=datetime.now().strftime("%Y-%m-%d %H:%M"),
