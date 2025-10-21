@@ -8,6 +8,7 @@ from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIO
 from pathlib import Path
 import ssl
 
+#tls_configuration = Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2)
 
 script_dir = Path(__file__).resolve().parent
 env = Environment(loader=FileSystemLoader(script_dir / 'r_templates'))
@@ -40,7 +41,7 @@ def ldap_search(conn, base_domain, query, attributes=None):
             new_entry = {"name": dn, "attrs": []}
             
             for k, v in attrs.items():
-                new_entry["attrs"].append({"id": k, "val": ", ".join(safe_decode(x) for x in v)})
+                new_entry["attrs"].append({"id": k, "val": v})
             result_list.append(new_entry)            
     return result_list
 
@@ -59,7 +60,7 @@ def main():
 
     base_domain=args.domain.replace(".",",DC=")
     base_domain="DC="+base_domain
-    tls_config = Tls(validate=ssl.CERT_REQUIRED, version=ssl.PROTOCOL_TLS_CLIENT)
+    tls_config =Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2)
     if not args.use_ssl:
         server = Server(f"ldap://{args.ip}", get_info=ALL)
     else:
